@@ -1,3 +1,3 @@
 return function()
-	print("Hello, world!")
+	print("Hello, world! No sun, no moon.")
 end
