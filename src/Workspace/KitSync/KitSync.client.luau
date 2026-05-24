@@ -168,7 +168,7 @@ function get_directory(path: string)
 			directory = location_lookups[directory] or directory
 			if not table.find(locations_to_index_names, directory) then break end
 		end
-		
+
 		local next_dir = current_dir:FindFirstChild(directory)
 		if not next_dir then 
 			local new_dir = Instance.new("Folder")
@@ -199,7 +199,7 @@ function get_directory_file(path: string)
 
 	local script_class = script_lookup[sub_extension or "module"]
 	local full_extension = sub_extension and sub_extension .. "." .. file_extension or file_extension
-	return FindFirstChildWithNameOfClass(directory, file_name, script_class), file_name, script_class, directory, full_extension
+	return FindFirstChildWithNameOfClass(directory, file_name, script_class), file_name, script_class, directory, file_extension, full_extension
 end
 
 function pull_repo(fetched_repo: {}, force_clone: boolean)
@@ -207,11 +207,11 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 		if tree_item.type ~= "blob" then continue end
 
 		local path: string = tree_item.path
-		local existing_script, file_name, script_class, directory, extension = get_directory_file(path)
+		local existing_script, file_name, script_class, directory, extension, full_extension = get_directory_file(path)
 		if not script_class then continue end
-		
+
 		local remote_file_sha = tree_item.sha
-		
+
 		local script_sha = existing_script and existing_script:GetAttribute("sha")
 		if script_sha ~= remote_file_sha or force_clone then
 			print(`Updating {file_name}`)
@@ -223,19 +223,19 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 			local new_script: LuaSourceContainer = existing_script or Instance.new(script_class)
 			new_script.Name = file_name
 			new_script.Parent = directory
-			
-			new_script:SetAttribute("file_extension", extension ~= "luau" and extension)
-			
+
+			new_script:SetAttribute("file_extension", extension ~= "luau" and full_extension)
+
 			ScriptEditorService:UpdateSourceAsync(new_script, function()
 				return decoded_file_content
 			end)
-			
+
 			new_script:SetAttribute("sha", tree_item.sha)
-			
+
 			local new_cached_tree_item = {}
 			new_cached_tree_item.source = decoded_file_content
 			new_cached_tree_item.sha = tree_item.sha
-			
+
 			server_cache[path] = new_cached_tree_item
 		end
 	end
@@ -251,11 +251,11 @@ end
 
 function open_repository(repo)
 	CurrentRepositoryLabel.Text = repo.name
-	
+
 	Start.Visible = false
 	Main.Visible = true
 	cache_instance:SetAttribute("open_repo", HttpService:JSONEncode(repo))
-	
+
 	pull_repo(fetch_repo(repo), false) -- MAKE SURE FALSE
 	index_all()
 end
@@ -263,29 +263,29 @@ end
 function logged_in()
 	plugin:SetSetting("access_token", github_interaction.ACCESS_TOKEN)
 	AccessTokenInput.Text = ""
-	
+
 	local success, user_repos = github_interaction.github_request(`user/repos`, "GET")
 	if not success then return end
-	
+
 	clear_ui_children(RepositoryScrollingFrame)
-	
+
 	for _, repo in ipairs(user_repos) do
 		local new_repo_frame = resources.RepositoryFrame:Clone()
 		new_repo_frame.NameLabel.Text = repo.full_name
-		
+
 		local last_click = 0
-		
+
 		new_repo_frame.MouseButton1Click:Connect(function()
 			if tick()-last_click < 0.4 then
 				open_repository(repo)
 			end
 			last_click = tick()
 		end)
-		
+
 		new_repo_frame.MouseEnter:Connect(function()
 			new_repo_frame.BackgroundTransparency = 0
 		end)
-		
+
 		new_repo_frame.MouseLeave:Connect(function()
 			new_repo_frame.BackgroundTransparency = 1
 		end)
@@ -296,7 +296,7 @@ end
 function login(): (boolean, string?)
 	ErrorMessage.Text = ""
 	--If there is an access token, attempt to get the user data as a means to show we are signed in
-	
+
 	local success, result
 	if github_interaction.ACCESS_TOKEN ~= "" then
 		success, result = github_interaction.github_request("user", "GET")
@@ -304,18 +304,18 @@ function login(): (boolean, string?)
 		result = "Empty Token"
 	end
 	user = success and result
-	
+
 	UsernameLabel.Text = success and result.login or ""
 	SignInStatusLabel.Text = success and "Signed in as" or "Not signed in"
 	SubtitleLabel.Text = success and "Open a repository" or "Log in with personal access token"
 	LogOutButton.Visible = success
 	SignInStatusLabel.Size = success and UDim2.new(1, -48,0, 25) or UDim2.new(1, -48,0, 33) --offsets label if user is signed out
-	
+
 	PATSignIn.Visible = not success
 	RepositoryList.Visible = success
-	
+
 	if not success then return false, (result or "Auth failed") end
-	
+
 	if result then
 		logged_in()
 		return true
@@ -328,22 +328,23 @@ function logout_current_user()
 end
 
 function get_path(item: Instance)
+	print(item.Parent)
 	local item_path = item:GetFullName()
 	local parts = string.split(item_path, ".")
-	
+
 	local item_root_name = parts[1]
-	local item_root = game:GetService(item_root_name)
+	local item_root = game:FindFirstChild(item_root_name)
 	if not item_root then return end
-	
+
 	if item_root:IsA("StarterPlayer") then
 		table.remove(parts,1)
 		item_root_name = parts[1]
 	end
-	
+
 	parts[1] = service_indexes[item_root_name] or parts[1]
-	
+
 	local file_extension = item:GetAttribute("file_extension") or utils.get_file_extension(item)
-	
+
 	local final_location = src_root .. "/" .. table.concat(parts, "/") .. "." .. file_extension
 	return final_location
 end
@@ -365,29 +366,31 @@ end
 
 function update_changes_ui()
 	clear_ui_children(ChangesList)
-	
+
 	local num_changes = utils.num_keys(changes)
 	ChangesCounterLabel.Text = num_changes
-	
+
 	update_commit_button()
-	
+
 	for change_location, change in pairs(changes) do
 		local change_frame_instance = resources.ChangeFrame:Clone()
 		change_frame_instance.ChangeLocationTitle.Text = change_location
 		change_frame_instance.ChangeLocationTitle.MouseButton1Click:Connect(function()
 			ScriptEditorService:OpenScriptDocumentAsync(change)
 		end)
-		
+
 		change_frame_instance.Parent = ChangesList
 	end
 end
 
-function diff_check(instance: Instance)
+function diff_check(instance: Instance, do_remove: boolean)
 	if not instance:IsA("LuaSourceContainer") then return end
-	local path = get_path(instance)
-	if not path then return end
+	local path = get_path(instance) 
+	if not path then 
+		changes[path] = instance
+	end
 	local cached_data = server_cache[path]
-	
+
 	if cached_data then
 		local did_data_change = cached_data.source ~= instance.Source
 		--if did_data_change then print(cached_data.source, instance.Source) end
@@ -414,41 +417,52 @@ function index(location: Instance, do_index_descendants: boolean)
 	end
 end
 
+function connect_indexed_service_events(service: Instance)
+	--service.DescendantAdded:Connect(function(instance)
+	--	print(instance)
+	--end)
+
+	service.DescendantRemoving:Connect(function(instance)
+		print(instance.Parent)
+		diff_check(instance)
+	end)
+end
+
 function index_all()
 	for _, service_name in ipairs(locations_to_index_names) do
 		local service_to_index = game:GetService(service_name)
 		if not service_to_index then continue end
-		
+
 		index(service_to_index, true)
 	end
 end
 
 function commit_changes(): boolean
 	set_commit_button_enabled(false)
-	
+
 	local num_changes = utils.num_keys(changes)
 	--if num_changes == 0 then return end
-	
+
 	local commit_summary = SummaryInput.Text
 	local commit_description = DescriptionInput.Text
-	
+
 	local success, latest_commit = github_interaction.github_request(`{github_interaction.git_path()}/ref/heads/main`, "GET")
 	if not success or not latest_commit then return end
 	local latest_commit_sha = latest_commit.object.sha
-	
+
 	local success, base_tree = github_interaction.github_request(`{github_interaction.git_path()}/commits/{latest_commit_sha}`, "GET")
 	if not success or not base_tree then return end
 	local base_tree_sha = base_tree.tree.sha
-	
+
 	-- Write code that loops through changes and creates blobs based on changes
 	-- Then push those changes to a new tree, commit the tree, and then push changes. (Update main brench ref to new sha)
-	
+
 	local new_change_blobs = {}
 	local new_change_shas = {}
-	
+
 	for change_path: string, changed_instance: LuaSourceContainer in pairs(changes) do
 		if not changed_instance or not change_path then continue end
-		
+
 		local success, new_blob = github_interaction.github_request(`{github_interaction.git_path()}/blobs`, "POST", {
 			content = changed_instance.Source,
 			encoding = "utf-8",
@@ -462,9 +476,9 @@ function commit_changes(): boolean
 			sha = new_blob_sha,
 		})
 		new_change_shas[changed_instance] = new_blob_sha
-		
+
 	end
-	
+
 	-- Create a new tree
 	local success, new_tree = github_interaction.github_request(`{github_interaction.git_path()}/trees`, "POST", {
 		base_tree = latest_commit_sha,
@@ -472,7 +486,7 @@ function commit_changes(): boolean
 	})
 	if not new_tree then return end
 	local new_tree_sha = new_tree.sha
-	
+
 	-- Commit the tree
 	local success, new_commit = github_interaction.github_request(`{github_interaction.git_path()}/commits`, "POST", {
 		message = SummaryInput.Text .. (DescriptionInput.Text:gsub(" ", "") ~= "" and "\n\n" ..DescriptionInput.Text or ""),
@@ -486,7 +500,7 @@ function commit_changes(): boolean
 	local success = github_interaction.github_request(`{github_interaction.git_path()}/refs/heads/main`, "PATCH", {
 		sha = new_commit_sha,
 	})
-	
+
 	if not success then return end
 	for changed_instance: LuaSourceContainer, new_sha: string in pairs(new_change_shas) do
 		changed_instance:SetAttribute("sha", new_sha)
@@ -499,53 +513,53 @@ function commit_changes(): boolean
 	save_cache()
 	index_all()
 	update_changes_ui()
-	
+
 	SummaryInput.Text = ""
 	DescriptionInput.Text = ""
-		
+
 	return success
 end
 
 ScriptEditorService.TextDocumentDidChange:Connect(function(document: ScriptDocument, changesArray: any)
 	local document_script_instance = document:GetScript()
 	if not document_script_instance then return end
-	
+
 	index(document_script_instance)
 end)
 
 local init do	
 	github_interaction.init(plugin)
-	
+
 	PATSignIn.Visible = true
 	RepositoryList.Visible = false
-	
+
 	index_all()
-	
+
 	SummaryInput:GetPropertyChangedSignal("Text"):Connect(update_commit_button)
-	
+
 	AccessTokenInput:GetPropertyChangedSignal("Text"):Connect(function()
 		Hider.Text = string.rep("*", #AccessTokenInput.Text)
 		Hider.Visible = #AccessTokenInput.Text ~= 0
 	end)
-	
+
 	LoginButton.MouseButton1Click:Connect(function()
 		github_interaction.set_access_token(AccessTokenInput.Text)
 		local success, error_message = login()
 		ErrorMessage.Text = success and "" or error_message
 	end)
-	
+
 	LogOutButton.MouseButton1Click:Connect(logout_current_user)
 	CommitButton.MouseButton1Click:Connect(function()
 		if not CommitButton:GetAttribute("enabled") then return end
-		
+
 		local num_changes = utils.num_keys(changes)
-		
+
 		set_commit_button_enabled(false)
 		CommitButton.Text = `Committing {num_changes} file{num_changes == 1 and "" or "s"} to <b>{branch}</b>`
-		
+
 		local was_commit_successful = commit_changes()
 		set_commit_button_enabled(true)
-		
+
 		if not was_commit_successful then
 			CommitButton.Text = "Commit unsuccessful."
 			set_commit_button_enabled(false)
@@ -553,29 +567,35 @@ local init do
 			return 
 		end
 	end)
-	
+
 	BackToRepositoryListButton.MouseButton1Click:Connect(function()
 		Start.Visible = true
 		Main.Visible = false
 		changes = {}
 		cache_instance:SetAttribute("open_repo", nil)
 	end)
-	
+
 	local success, error_message = login()
 	ErrorMessage.Text = success and "" or (github_interaction.ACCESS_TOKEN ~= "" and "Invalid saved credentials" or error_message)
-	
+
 	Main.Visible, Start.Visible = false, true
 	update_changes_ui()
-	
-	
+
+
 	-- Open previously open repo
 	open_repo = cache_instance:GetAttribute("open_repo")
 	if success and open_repo then
 		local success, decoded_repo = pcall(HttpService.JSONDecode, HttpService, open_repo)
 		open_repository(decoded_repo)
-		
+
 		if not success then warn(decoded_repo) end
 	end
-	
+
+	for _, service_name in ipairs(locations_to_index_names) do
+		local service_to_index = game:GetService(service_name)
+		if not service_to_index then continue end
+		connect_indexed_service_events(service_to_index)
+	end
+
 	gui.Parent = widget
 end
