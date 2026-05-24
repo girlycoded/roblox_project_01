@@ -101,11 +101,16 @@ local ChangesTitle = ChangesFrame.ChangesTitle
 local ChangesCounterFrame = ChangesFrame.ChangesCounterFrame
 local ChangesCounterLabel = ChangesCounterFrame.ChangesCounterLabel
 local ChangesList = Main.ChangesList
+local CurrentRepositoryFrame = Main.CurrentRepositoryFrame
 
 local CommitFrame = Main.CommitFrame
 local CommitButton = CommitFrame.CommitButton
 local SummaryInput = CommitFrame.SummaryInput
 local DescriptionInput = CommitFrame.DescriptionInput
+
+local CurrentRepositoryLabel = CurrentRepositoryFrame.CurrentRepositoryLabel
+local SettingsButton = CurrentRepositoryFrame.SettingsButton
+local BackToRepositoryListButton = CurrentRepositoryFrame.BackToRepositoryListButton
 
 --// Variables/
 -- #TODO_readd_workspace_before_prod
@@ -152,7 +157,7 @@ function get_directory(path: string)
 	local directories = string.split(path, "/")
 	local current_dir = game
 	for i, directory in ipairs(directories) do
-		if directory == src_root then continue end
+		if directory == src_root and i == 1 then continue end
 		if i == #directories then continue end
 
 		if current_dir == game then
@@ -242,8 +247,12 @@ function fetch_repo(repo)
 end
 
 function open_repository(repo)
+	CurrentRepositoryLabel.Text = repo.name
+	
+	
 	Start.Visible = false
 	Main.Visible = true
+	
 	pull_repo(fetch_repo(repo), false) -- MAKE SURE FALSE
 	index_all()
 end
@@ -538,6 +547,11 @@ local init do
 			warn("Commit unsuccessful") 
 			return 
 		end
+	end)
+	
+	BackToRepositoryListButton.MouseButton1Click:Connect(function()
+		Start.Visible = true
+		Main.Visible = false
 	end)
 	
 	local success, error_message = login()
