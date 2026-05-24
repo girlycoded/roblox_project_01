@@ -249,9 +249,9 @@ end
 function open_repository(repo)
 	CurrentRepositoryLabel.Text = repo.name
 	
-	
 	Start.Visible = false
 	Main.Visible = true
+	cache_instance:SetAttribute("open_repo", HttpService:JSONEncode(repo))
 	
 	pull_repo(fetch_repo(repo), false) -- MAKE SURE FALSE
 	index_all()
@@ -552,14 +552,24 @@ local init do
 	BackToRepositoryListButton.MouseButton1Click:Connect(function()
 		Start.Visible = true
 		Main.Visible = false
+		cache_instance:SetAttribute("open_repo", nil)
 	end)
 	
 	local success, error_message = login()
-	ErrorMessage.Text = success and "" or (github_interaction.ACCESS_TOKEN ~= "" and "Invalid saved credentials" or "")
+	ErrorMessage.Text = success and "" or (github_interaction.ACCESS_TOKEN ~= "" and "Invalid saved credentials" or error_message)
 	
 	Main.Visible, Start.Visible = false, true
-	
 	update_changes_ui()
+	
+	
+	-- Open previously open repo
+	open_repo = cache_instance:GetAttribute("open_repo")
+	if success and open_repo then
+		local success, decoded_repo = pcall(HttpService.JSONDecode, HttpService, open_repo)
+		open_repository(decoded_repo)
+		
+		if not success then warn(decoded_repo) end
+	end
 	
 	gui.Parent = widget
 end
