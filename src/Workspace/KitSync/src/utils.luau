@@ -1,7 +1,7 @@
 local extension_lookup = {
-	Script = ".server.luau",
-	LocalScript = ".client.luau",
-	ModuleScript = ".luau"
+	Script = "server.luau",
+	LocalScript = "client.luau",
+	ModuleScript = "luau"
 }
 
 local module = {}

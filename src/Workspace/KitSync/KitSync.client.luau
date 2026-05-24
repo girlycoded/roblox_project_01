@@ -186,7 +186,7 @@ end
 function get_directory_file(path: string)
 	local extensions = string.split(path,".")
 	local file_extension = extensions[#extensions]
-	local sub_extension = #extensions > 2 and extensions[#extensions - 1]
+	local sub_extension = #extensions > 2 and extensions[#extensions - 1] or nil
 
 	local directories = string.split(extensions[1], "/")
 	local file_name = directories[#directories]
@@ -198,7 +198,8 @@ function get_directory_file(path: string)
 	if not directory then return end
 
 	local script_class = script_lookup[sub_extension or "module"]
-	return FindFirstChildWithNameOfClass(directory, file_name, script_class), file_name, script_class, directory
+	local full_extension = sub_extension and sub_extension .. "." .. file_extension or file_extension
+	return FindFirstChildWithNameOfClass(directory, file_name, script_class), file_name, script_class, directory, full_extension
 end
 
 function pull_repo(fetched_repo: {}, force_clone: boolean)
@@ -206,7 +207,7 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 		if tree_item.type ~= "blob" then continue end
 
 		local path: string = tree_item.path
-		local existing_script, file_name, script_class, directory = get_directory_file(path)
+		local existing_script, file_name, script_class, directory, extension = get_directory_file(path)
 		if not script_class then continue end
 		
 		local remote_file_sha = tree_item.sha
@@ -222,6 +223,8 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 			local new_script: LuaSourceContainer = existing_script or Instance.new(script_class)
 			new_script.Name = file_name
 			new_script.Parent = directory
+			
+			new_script:SetAttribute("file_extension", extension ~= "luau" and extension)
 			
 			ScriptEditorService:UpdateSourceAsync(new_script, function()
 				return decoded_file_content
@@ -339,7 +342,9 @@ function get_path(item: Instance)
 	
 	parts[1] = service_indexes[item_root_name] or parts[1]
 	
-	local final_location = src_root .. "/" .. table.concat(parts, "/") .. utils.get_file_extension(item)
+	local file_extension = item:GetAttribute("file_extension") or utils.get_file_extension(item)
+	
+	local final_location = src_root .. "/" .. table.concat(parts, "/") .. "." .. file_extension
 	return final_location
 end
 
@@ -381,11 +386,11 @@ function diff_check(instance: Instance)
 	if not instance:IsA("LuaSourceContainer") then return end
 	local path = get_path(instance)
 	if not path then return end
-
 	local cached_data = server_cache[path]
-
+	
 	if cached_data then
 		local did_data_change = cached_data.source ~= instance.Source
+		--if did_data_change then print(cached_data.source, instance.Source) end
 		changes[path] = did_data_change and instance or nil
 	else
 		changes[path] = instance -- #TODO_change_this_to_show_an_addition
@@ -552,6 +557,7 @@ local init do
 	BackToRepositoryListButton.MouseButton1Click:Connect(function()
 		Start.Visible = true
 		Main.Visible = false
+		changes = {}
 		cache_instance:SetAttribute("open_repo", nil)
 	end)
 	
