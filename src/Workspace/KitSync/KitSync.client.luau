@@ -134,6 +134,8 @@ local service_indexes = {
 	StarterCharacterScripts = "character",
 }
 
+local changes: {string: LuaSourceContainer} = {}
+
 local user
 local branch = "main"
 local src_root = "src"
@@ -237,6 +239,12 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 			new_cached_tree_item.sha = tree_item.sha
 
 			server_cache[path] = new_cached_tree_item
+			
+			new_script:GetPropertyChangedSignal("Parent"):Connect(function()
+				print(directory, new_script:GetFullName())
+				changes[path] = new_script
+				update_changes_ui()
+			end)
 		end
 	end
 	save_cache()
@@ -328,7 +336,6 @@ function logout_current_user()
 end
 
 function get_path(item: Instance)
-	print(item.Parent)
 	local item_path = item:GetFullName()
 	local parts = string.split(item_path, ".")
 
@@ -348,8 +355,6 @@ function get_path(item: Instance)
 	local final_location = src_root .. "/" .. table.concat(parts, "/") .. "." .. file_extension
 	return final_location
 end
-
-local changes: {string: LuaSourceContainer} = {}
 
 function set_commit_button_enabled(new_state: boolean)
 	CommitButton:SetAttribute("enabled", new_state)
@@ -372,13 +377,21 @@ function update_changes_ui()
 
 	update_commit_button()
 
-	for change_location, change in pairs(changes) do
+	for change_location, changed_script: Instance in pairs(changes) do
 		local change_frame_instance = resources.ChangeFrame:Clone()
 		change_frame_instance.ChangeLocationTitle.Text = change_location
 		change_frame_instance.ChangeLocationTitle.MouseButton1Click:Connect(function()
-			ScriptEditorService:OpenScriptDocumentAsync(change)
+			ScriptEditorService:OpenScriptDocumentAsync(changed_script)
 		end)
-
+		
+		if not changed_script or not changed_script.Parent then
+			change_frame_instance.ChangeStatusIcon.Image = "rbxassetid://758722868479801"
+			change_frame_instance.ChangeStatusIcon.ImageColor3 = Color3.fromRGB(203, 36, 49)
+		elseif false then --#TODO_modified
+			change_frame_instance.ChangeStatusIcon.Image = "rbxassetid://103912415783053"
+			change_frame_instance.ChangeStatusIcon.ImageColor3 = Color3.fromRGB(170, 133, 7)
+		end
+		
 		change_frame_instance.Parent = ChangesList
 	end
 end
@@ -421,11 +434,6 @@ function connect_indexed_service_events(service: Instance)
 	--service.DescendantAdded:Connect(function(instance)
 	--	print(instance)
 	--end)
-
-	service.DescendantRemoving:Connect(function(instance)
-		print(instance.Parent)
-		diff_check(instance)
-	end)
 end
 
 function index_all()
