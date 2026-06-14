@@ -1,6 +1,6 @@
 type ChangeItem = {
 	instance: LuaSourceContainer,
-	change: "addition" | "modification" | "deletion",
+	status: "addition" | "modification" | "deletion",
 }
 
 plugin.Name = "KitSync"
@@ -145,6 +145,22 @@ local user
 local branch = "main"
 local src_root = "src"
 
+--// CONSTS
+local STATUS_ICONS = {
+	addition = {
+		image = "rbxassetid://124035990493765",
+		color = Color3.fromRGB(34, 134, 58),
+	},
+	modification = {
+		image = "rbxassetid://103912415783053",
+		color = Color3.fromRGB(170, 133, 7),
+	},
+	deletion = {
+		image = "rbxassetid://75872286847980",
+		color = Color3.fromRGB(203, 36, 49),
+	}
+}
+
 --// Functions
 function clear_ui_children(root_ui: Instance)
 	for _, v in ipairs(root_ui:GetChildren()) do
@@ -231,7 +247,7 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 			new_script.Name = file_name
 			new_script.Parent = directory
 
-			new_script:SetAttribute("file_extension", extension ~= "luau" and full_extension)
+			new_script:SetAttribute("file_extension", extension ~= "luau" and full_extension or nil)
 
 			ScriptEditorService:UpdateSourceAsync(new_script, function()
 				return decoded_file_content
@@ -384,24 +400,31 @@ function update_changes_ui()
 	ChangesCounterLabel.Text = num_changes
 
 	update_commit_button()
-
+	
+	local changes_list = {}
 	for change_location, changed_item: ChangeItem in pairs(changes) do
+		table.insert(changes_list, change_location)
+	end
+	
+	table.sort(changes_list, function(a: string, b: string)
+		return a:lower() < b:lower()
+	end)
+	
+	for _, path in ipairs(changes_list) do
+		local changed_item = changes[path]
 		local changed_script = changed_item.instance
 		if not changed_script then continue end
 		
 		local change_frame_instance = resources.ChangeFrame:Clone()
-		change_frame_instance.ChangeLocationTitle.Text = change_location
+		change_frame_instance.ChangeLocationTitle.Text = path
 		change_frame_instance.ChangeLocationTitle.MouseButton1Click:Connect(function()
 			ScriptEditorService:OpenScriptDocumentAsync(changed_script)
 		end)
 		
-		if not changed_script or not changed_script.Parent then
-			change_frame_instance.ChangeStatusIcon.Image = "rbxassetid://758722868479801"
-			change_frame_instance.ChangeStatusIcon.ImageColor3 = Color3.fromRGB(203, 36, 49)
-		elseif false then --#TODO_modified
-			change_frame_instance.ChangeStatusIcon.Image = "rbxassetid://103912415783053"
-			change_frame_instance.ChangeStatusIcon.ImageColor3 = Color3.fromRGB(170, 133, 7)
-		end
+		local status_icon = STATUS_ICONS[changed_item.status] or STATUS_ICONS.modification
+		
+		change_frame_instance.ChangeStatusIcon.Image =  status_icon.image
+		change_frame_instance.ChangeStatusIcon.ImageColor3 = status_icon.color
 		
 		change_frame_instance.Parent = ChangesList
 	end
@@ -411,7 +434,7 @@ function diff_check(instance: Instance, do_remove: boolean)
 	if not instance:IsA("LuaSourceContainer") then return end
 	local path = get_path(instance) 
 	local cached_data = server_cache[path]
-
+	
 	if cached_data then
 		local did_data_change = cached_data.source ~= instance.Source
 		--if did_data_change then print(cached_data.source, instance.Source) end
@@ -423,8 +446,9 @@ function diff_check(instance: Instance, do_remove: boolean)
 		changes[path] = {
 			instance = instance,
 			status = "addition",
-		} -- #TODONE_change_this_to_show_an_addition
+		}
 	end
+	update_changes_ui()
 end
 
 function index(location: Instance, do_index_descendants: boolean)		
@@ -446,8 +470,7 @@ end
 
 function connect_indexed_service_events(service: Instance)
 	service.DescendantAdded:Connect(function(instance)
-		print(instance)
-		print(changes)
+		diff_check(instance)
 	end)
 	service.DescendantRemoving:Connect(function(instance)
 		print(instance)
