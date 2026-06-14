@@ -1,3 +1,8 @@
+type ChangeItem = {
+	instance: LuaSourceContainer,
+	change: "addition" | "modification" | "deletion",
+}
+
 plugin.Name = "KitSync"
 --plugin:SetSetting("access_token", nil)
 
@@ -240,11 +245,14 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 
 			server_cache[path] = new_cached_tree_item
 			
-			new_script:GetPropertyChangedSignal("Parent"):Connect(function()
-				print(directory, new_script:GetFullName())
-				changes[path] = new_script
-				update_changes_ui()
-			end)
+			--new_script:GetPropertyChangedSignal("Parent"):Connect(function() -- might remove
+			--	print(directory, new_script:GetFullName())
+			--	changes[path] = {
+			--		instance = new_script
+					
+			--	}
+			--	update_changes_ui()
+			--end)
 		end
 	end
 	save_cache()
@@ -335,7 +343,7 @@ function logout_current_user()
 	login()
 end
 
-function get_path(item: Instance)
+function get_path(item: Instance): string?
 	local item_path = item:GetFullName()
 	local parts = string.split(item_path, ".")
 
@@ -377,7 +385,10 @@ function update_changes_ui()
 
 	update_commit_button()
 
-	for change_location, changed_script: Instance in pairs(changes) do
+	for change_location, changed_item: ChangeItem in pairs(changes) do
+		local changed_script = changed_item.instance
+		if not changed_script then continue end
+		
 		local change_frame_instance = resources.ChangeFrame:Clone()
 		change_frame_instance.ChangeLocationTitle.Text = change_location
 		change_frame_instance.ChangeLocationTitle.MouseButton1Click:Connect(function()
@@ -399,17 +410,20 @@ end
 function diff_check(instance: Instance, do_remove: boolean)
 	if not instance:IsA("LuaSourceContainer") then return end
 	local path = get_path(instance) 
-	if not path then 
-		changes[path] = instance
-	end
 	local cached_data = server_cache[path]
 
 	if cached_data then
 		local did_data_change = cached_data.source ~= instance.Source
 		--if did_data_change then print(cached_data.source, instance.Source) end
-		changes[path] = did_data_change and instance or nil
+		changes[path] = did_data_change and {
+			instance = instance,
+			status = "modification",
+		} or nil
 	else
-		changes[path] = instance -- #TODO_change_this_to_show_an_addition
+		changes[path] = {
+			instance = instance,
+			status = "addition",
+		} -- #TODONE_change_this_to_show_an_addition
 	end
 end
 
@@ -431,9 +445,13 @@ function index(location: Instance, do_index_descendants: boolean)
 end
 
 function connect_indexed_service_events(service: Instance)
-	--service.DescendantAdded:Connect(function(instance)
-	--	print(instance)
-	--end)
+	service.DescendantAdded:Connect(function(instance)
+		print(instance)
+		print(changes)
+	end)
+	service.DescendantRemoving:Connect(function(instance)
+		print(instance)
+	end)
 end
 
 function index_all()
@@ -468,11 +486,11 @@ function commit_changes(): boolean
 	local new_change_blobs = {}
 	local new_change_shas = {}
 
-	for change_path: string, changed_instance: LuaSourceContainer in pairs(changes) do
-		if not changed_instance or not change_path then continue end
+	for change_path: string, changed_item: ChangeItem in pairs(changes) do
+		if not changed_item or not change_path or not changed_item.instance then continue end
 
 		local success, new_blob = github_interaction.github_request(`{github_interaction.git_path()}/blobs`, "POST", {
-			content = changed_instance.Source,
+			content = changed_item.instance.Source,
 			encoding = "utf-8",
 		})
 		if not success then return end
@@ -483,7 +501,7 @@ function commit_changes(): boolean
 			type = "blob",
 			sha = new_blob_sha,
 		})
-		new_change_shas[changed_instance] = new_blob_sha
+		new_change_shas[changed_item.instance] = new_blob_sha
 
 	end
 
