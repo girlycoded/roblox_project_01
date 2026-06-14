@@ -261,14 +261,10 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 
 			server_cache[path] = new_cached_tree_item
 			
-			--new_script:GetPropertyChangedSignal("Parent"):Connect(function() -- might remove
-			--	print(directory, new_script:GetFullName())
-			--	changes[path] = {
-			--		instance = new_script
-					
-			--	}
-			--	update_changes_ui()
-			--end)
+			new_script:GetPropertyChangedSignal("Parent"):Connect(function() -- might remove
+				print(file_name, path)
+				diff_check(new_script, path)
+			end)
 		end
 	end
 	save_cache()
@@ -430,12 +426,19 @@ function update_changes_ui()
 	end
 end
 
-function diff_check(instance: Instance, do_remove: boolean)
-	if not instance:IsA("LuaSourceContainer") then return end
-	local path = get_path(instance) 
-	local cached_data = server_cache[path]
+function diff_check(instance: Instance, force_path: string?)
+	if not instance:IsA("LuaSourceContainer") and not force_path then return end
+	local path = force_path or get_path(instance) 
+	local cached_data = server_cache[path] 
 	
-	if cached_data then
+	if force_path then
+		print(path, instance)
+		changes[path] = {
+			instance = instance,
+			status = "deletion",
+		}
+		--print(instance.Parent) -- Would remove here but we don't have access to path
+	elseif cached_data then
 		local did_data_change = cached_data.source ~= instance.Source
 		--if did_data_change then print(cached_data.source, instance.Source) end
 		changes[path] = did_data_change and {
@@ -471,9 +474,6 @@ end
 function connect_indexed_service_events(service: Instance)
 	service.DescendantAdded:Connect(function(instance)
 		diff_check(instance)
-	end)
-	service.DescendantRemoving:Connect(function(instance)
-		print(instance)
 	end)
 end
 
