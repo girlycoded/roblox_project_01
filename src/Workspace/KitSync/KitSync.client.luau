@@ -19,6 +19,8 @@ type ChangeItem = {
 	status: "addition" | "modification" | "deletion",
 }
 
+local NULL_PROXY = newproxy()
+
 local STATUS_ICONS = {
 	addition = {
 		image = "rbxassetid://124035990493765",
@@ -75,7 +77,7 @@ function _parent_cache_if_widget_enabled()
 	if not widget.Enabled then return end
 	cache_instance.Name = CACHE_INSTANCE_NAME
 	cache_instance.Parent = ServerStorage
-	
+
 	ContentProvider:PreloadAsync(ASSETS_TO_PRELOAD)
 end
 
@@ -263,7 +265,7 @@ function pull_repo(fetched_repo: {}, force_clone: boolean)
 			new_cached_tree_item.sha = tree_item.sha
 
 			server_cache[path] = new_cached_tree_item
-			
+
 			new_script:GetPropertyChangedSignal("Parent"):Connect(function() -- might remove
 				print(file_name, path)
 				diff_check(new_script, path)
@@ -399,32 +401,32 @@ function update_changes_ui()
 	ChangesCounterLabel.Text = num_changes
 
 	update_commit_button()
-	
+
 	local changes_list = {}
 	for change_location, changed_item: ChangeItem in pairs(changes) do
 		table.insert(changes_list, change_location)
 	end
-	
+
 	table.sort(changes_list, function(a: string, b: string)
 		return a:lower() < b:lower()
 	end)
-	
+
 	for _, path in ipairs(changes_list) do
 		local changed_item = changes[path]
 		local changed_script = changed_item.instance
 		if not changed_script then continue end
-		
+
 		local change_frame_instance = resources.ChangeFrame:Clone()
 		change_frame_instance.ChangeLocationTitle.Text = path
 		change_frame_instance.ChangeLocationTitle.MouseButton1Click:Connect(function()
 			ScriptEditorService:OpenScriptDocumentAsync(changed_script)
 		end)
-		
+
 		local status_icon = STATUS_ICONS[changed_item.status] or STATUS_ICONS.modification
-		
+
 		change_frame_instance.ChangeStatusIcon.Image =  status_icon.image
 		change_frame_instance.ChangeStatusIcon.ImageColor3 = status_icon.color
-		
+
 		change_frame_instance.Parent = ChangesList
 	end
 end
@@ -433,7 +435,7 @@ function diff_check(instance: Instance, force_path: string?)
 	if not instance:IsA("LuaSourceContainer") and not force_path then return end
 	local path = force_path or get_path(instance) 
 	local cached_data = server_cache[path] 
-	
+
 	if force_path then
 		print(path, instance)
 		changes[path] = {
@@ -516,20 +518,25 @@ function commit_changes(): boolean
 	for change_path: string, changed_item: ChangeItem in pairs(changes) do
 		if not changed_item or not change_path or not changed_item.instance then continue end
 
-		local success, new_blob = github_interaction.github_request(`{github_interaction.git_path()}/blobs`, "POST", {
-			content = changed_item.instance.Source,
-			encoding = "utf-8",
-		})
-		if not success then return end
-		local new_blob_sha = new_blob.sha
+		local success, new_blob
+		if changed_item.status ~= "deletion" then
+			success, new_blob = github_interaction.github_request(`{github_interaction.git_path()}/blobs`, "POST", {
+				content = changed_item.instance.Source,
+				encoding = "utf-8",
+			})
+			if not success then return end
+		end
+		local new_blob_sha = new_blob and new_blob.sha or NULL_PROXY
 		table.insert(new_change_blobs, {
 			path = change_path,
 			mode = "100644",
 			type = "blob",
 			sha = new_blob_sha,
 		})
-		new_change_shas[changed_item.instance] = new_blob_sha
-
+		new_change_shas[change_path] = {
+			sha = new_blob_sha,
+			instance = changed_item.instance
+		}
 	end
 
 	-- Create a new tree
@@ -553,15 +560,16 @@ function commit_changes(): boolean
 	local success = github_interaction.github_request(`{github_interaction.git_path()}/refs/heads/main`, "PATCH", {
 		sha = new_commit_sha,
 	})
-
 	if not success then return end
-	for changed_instance: LuaSourceContainer, new_sha: string in pairs(new_change_shas) do
-		changed_instance:SetAttribute("sha", new_sha)
+	
+	--// Cache results
+	for path, new_change_item in pairs(new_change_shas) do
+		new_change_item.instance:SetAttribute("sha", new_change_item.sha)
 		local new_cached_tree_item = {}
-		new_cached_tree_item.source = changed_instance.Source
-		new_cached_tree_item.sha = new_sha
+		new_cached_tree_item.source = new_change_item.instance.Source
+		new_cached_tree_item.sha = new_change_item.sha
 
-		server_cache[get_path(changed_instance)] = new_cached_tree_item
+		server_cache[path] = new_cached_tree_item
 	end
 	save_cache()
 	index_all()
