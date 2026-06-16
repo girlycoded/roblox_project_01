@@ -1,12 +1,8 @@
-type ChangeItem = {
-	instance: LuaSourceContainer,
-	status: "addition" | "modification" | "deletion",
-}
-
+if game:GetService("RunService"):IsRunMode() then return end
 plugin.Name = "KitSync"
---plugin:SetSetting("access_token", nil)
 
 --// Services
+local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -17,7 +13,28 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local ServerStorage = game:GetService("ServerStorage")
 local ScriptEditorService = game:GetService("ScriptEditorService")
 
-if RunService:IsRunMode() then return end
+--// CONSTS & Types
+type ChangeItem = {
+	instance: LuaSourceContainer,
+	status: "addition" | "modification" | "deletion",
+}
+
+local STATUS_ICONS = {
+	addition = {
+		image = "rbxassetid://124035990493765",
+		color = Color3.fromRGB(34, 134, 58),
+	},
+	modification = {
+		image = "rbxassetid://103912415783053",
+		color = Color3.fromRGB(170, 133, 7),
+	},
+	deletion = {
+		image = "rbxassetid://75872286847980",
+		color = Color3.fromRGB(203, 36, 49),
+	}
+}
+
+local ASSETS_TO_PRELOAD = {124035990493765, 103912415783053, 75872286847980}
 
 --// Instances
 local KitSync = script.Parent
@@ -58,6 +75,8 @@ function _parent_cache_if_widget_enabled()
 	if not widget.Enabled then return end
 	cache_instance.Name = CACHE_INSTANCE_NAME
 	cache_instance.Parent = ServerStorage
+	
+	ContentProvider:PreloadAsync(ASSETS_TO_PRELOAD)
 end
 
 function save_cache(): boolean
@@ -72,6 +91,34 @@ end
 
 widget:GetPropertyChangedSignal("Enabled"):Connect(_parent_cache_if_widget_enabled)
 _parent_cache_if_widget_enabled()
+
+--// Variables/
+-- #TODO_readd_workspace_before_prod
+local locations_to_index_names = {"Workspace", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer"}
+local allowed_file_extensions = {"lua", "luau"}
+local script_lookup = {
+	server = "Script",
+	client = "LocalScript",
+	module = "ModuleScript",
+}
+local location_lookups = {
+	client = "StarterPlayerScripts",
+	server = "ServerScriptService",
+	shared = "ReplicatedStorage",
+	character = "StarterCharacterScripts"
+}
+local service_indexes = {
+	ReplicatedStorage = "shared",
+	ServerScriptService = "server",
+	StarterPlayerScripts = "client",
+	StarterCharacterScripts = "character",
+}
+
+local changes: {string: LuaSourceContainer} = {}
+
+local user
+local branch = "main"
+local src_root = "src"
 
 --// Gui
 
@@ -116,50 +163,6 @@ local DescriptionInput = CommitFrame.DescriptionInput
 local CurrentRepositoryLabel = CurrentRepositoryFrame.CurrentRepositoryLabel
 local SettingsButton = CurrentRepositoryFrame.SettingsButton
 local BackToRepositoryListButton = CurrentRepositoryFrame.BackToRepositoryListButton
-
---// Variables/
--- #TODO_readd_workspace_before_prod
-local locations_to_index_names = {"Workspace", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer"}
-local allowed_file_extensions = {"lua", "luau"}
-local script_lookup = {
-	server = "Script",
-	client = "LocalScript",
-	module = "ModuleScript",
-}
-local location_lookups = {
-	client = "StarterPlayerScripts",
-	server = "ServerScriptService",
-	shared = "ReplicatedStorage",
-	character = "StarterCharacterScripts"
-}
-local service_indexes = {
-	ReplicatedStorage = "shared",
-	ServerScriptService = "server",
-	StarterPlayerScripts = "client",
-	StarterCharacterScripts = "character",
-}
-
-local changes: {string: LuaSourceContainer} = {}
-
-local user
-local branch = "main"
-local src_root = "src"
-
---// CONSTS
-local STATUS_ICONS = {
-	addition = {
-		image = "rbxassetid://124035990493765",
-		color = Color3.fromRGB(34, 134, 58),
-	},
-	modification = {
-		image = "rbxassetid://103912415783053",
-		color = Color3.fromRGB(170, 133, 7),
-	},
-	deletion = {
-		image = "rbxassetid://75872286847980",
-		color = Color3.fromRGB(203, 36, 49),
-	}
-}
 
 --// Functions
 function clear_ui_children(root_ui: Instance)
