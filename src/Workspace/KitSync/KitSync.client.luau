@@ -490,6 +490,7 @@ function index_all()
 end
 
 function commit_changes(): boolean
+	print(changes)
 	set_commit_button_enabled(false)
 
 	local num_changes = utils.num_keys(changes)
