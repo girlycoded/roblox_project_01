@@ -34,7 +34,7 @@ local STATUS_ICONS = {
 	}
 }
 
-local ASSETS_TO_PRELOAD = {124035990493765, 103912415783053, 75872286847980}
+local ASSETS_TO_PRELOAD = {"rbxassetid://124035990493765", "rbxassetid://103912415783053", "rbxassetid://75872286847980"}
 
 --// Instances
 local KitSync = script.Parent
