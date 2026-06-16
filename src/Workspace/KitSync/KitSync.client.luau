@@ -556,13 +556,13 @@ function commit_changes(): boolean
 	if not new_commit then return end
 	local new_commit_sha = new_commit.sha
 
-	--Push (update the branch ref)
+	-- Push (update the branch ref)
 	local success = github_interaction.github_request(`{github_interaction.git_path()}/refs/heads/main`, "PATCH", {
 		sha = new_commit_sha,
 	})
 	if not success then return end
 	
-	--// Cache results
+	-- Cache results
 	for path, new_change_item in pairs(new_change_shas) do
 		new_change_item.instance:SetAttribute("sha", new_change_item.sha)
 		local new_cached_tree_item = {}
@@ -571,6 +571,10 @@ function commit_changes(): boolean
 
 		server_cache[path] = new_cached_tree_item
 	end
+	
+	-- Reset changes (hopefully works)
+	changes = {}
+	
 	save_cache()
 	index_all()
 	update_changes_ui()
