@@ -46,13 +46,12 @@ local src = KitSync.src
 local github_interaction = require(src.github_interaction)
 local utils = require(src.utils)
 
-local CACHE_INSTANCE_NAME = "KitSyncCache"
-local cache_instance: Configuration = ServerStorage:FindFirstChild(CACHE_INSTANCE_NAME) or Instance.new("Configuration")
-local encoded_cache = cache_instance:GetAttribute("server_cache")
+local encoded_cache = plugin:GetSetting(tostring(game.PlaceId) .. "cache")
 local server_cache = {}
 
 pcall(function()
 	server_cache = HttpService:JSONDecode(encoded_cache) or server_cache
+	print(server_cache)
 end)
 
 local widget = plugin:CreateDockWidgetPluginGuiAsync("KitSync", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Left, false, false, 200, 200))
@@ -75,17 +74,14 @@ end)
 
 function _parent_cache_if_widget_enabled()
 	if not widget.Enabled then return end
-	cache_instance.Name = CACHE_INSTANCE_NAME
-	cache_instance.Parent = ServerStorage
 
 	ContentProvider:PreloadAsync(ASSETS_TO_PRELOAD)
 end
 
 function save_cache(): boolean
-	if not cache_instance then return end
 	local success, result = pcall(function()
 		local encoded_cache = HttpService:JSONEncode(server_cache)
-		cache_instance:SetAttribute("server_cache", encoded_cache)
+		plugin:SetSetting(tostring(game.PlaceId) .. "cache", encoded_cache)
 	end)
 	if not success then warn("Failed to save server_cache!") end
 	return success
@@ -287,9 +283,10 @@ function open_repository(repo)
 
 	Start.Visible = false
 	Main.Visible = true
-	cache_instance:SetAttribute("open_repo", HttpService:JSONEncode(repo))
+	
+	plugin:SetSetting(tostring(game.PlaceId) .. "open_repo", HttpService:JSONEncode(repo))
 
-	pull_repo(fetch_repo(repo), false) -- MAKE SURE FALSE
+	pull_repo(fetch_repo(repo), true) -- MAKE SURE FALSE
 	index_all()
 end
 
@@ -320,7 +317,7 @@ function logged_in()
 		end)
 
 		new_repo_frame.MouseLeave:Connect(function()
-			new_repo_frame.BackgroundTransparency = 1
+			new_repo_frame.BackgroundTransparency = 11
 		end)
 		new_repo_frame.Parent = RepositoryScrollingFrame
 	end
@@ -637,7 +634,8 @@ local init do
 		Start.Visible = true
 		Main.Visible = false
 		changes = {}
-		cache_instance:SetAttribute("open_repo", nil)
+		plugin:SetSetting("open_repo")
+		plugin:SetSetting(tostring(game.PlaceId) .. "open_repo", HttpService:JSONEncode(nil))
 	end)
 
 	local success, error_message = login()
@@ -648,7 +646,7 @@ local init do
 
 
 	-- Open previously open repo
-	open_repo = cache_instance:GetAttribute("open_repo")
+	open_repo = plugin:GetSetting(tostring(game.PlaceId) .. "open_repo")
 	if success and open_repo then
 		local success, decoded_repo = pcall(HttpService.JSONDecode, HttpService, open_repo)
 		open_repository(decoded_repo)
